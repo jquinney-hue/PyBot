@@ -560,7 +560,31 @@ function init() {
         theme: "dracula",
         lineNumbers: true,
         indentUnit: 4,
-        extraKeys: { "Tab": "indentMore", "Shift-Tab": "indentLess" }
+        extraKeys: { 
+            "Tab": "indentMore", 
+            "Shift-Tab": "indentLess",
+            "Backspace": function(cm) {
+                // If there's a selection, just delete the selected text normally
+                if (cm.somethingSelected()) {
+                    cm.execCommand("delCharBefore");
+                    return;
+                }
+                
+                const pos = cm.getCursor();
+                const line = cm.getLine(pos.line);
+                const indentUnit = cm.getOption("indentUnit");
+                
+                // If there are only spaces before the cursor, delete up to the nearest tab stop
+                if (pos.ch > 0 && line.slice(0, pos.ch).trim() === "") {
+                    // Calculate how many spaces to delete (handles partial indents cleanly)
+                    const spacesToDelete = pos.ch % indentUnit || indentUnit;
+                    cm.replaceRange("", {line: pos.line, ch: pos.ch - spacesToDelete}, pos);
+                } else {
+                    // Otherwise, just delete a single character like normal
+                    cm.execCommand("delCharBefore");
+                }
+            }
+        }
     });
 
     editor.on("change", updateLineCount);
