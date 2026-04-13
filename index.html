@@ -69,6 +69,9 @@
             <button id="btn-play">▶ Play</button>
             <button id="btn-stop">⏹ Stop / Reset</button>
         </div>
+        <button id="btn-help" onclick="document.getElementById('help-modal').classList.remove('hidden')">
+    ❓ Help & Syntax
+        </button>
     </div>
 
     <div id="main-area">
@@ -102,6 +105,38 @@
             <button id="btn-close-win">Close</button>
         </div>
     </div>
+    <div id="help-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; justify-content: center; align-items: center; font-family: sans-serif;">
+        <div style="background: #282a36; padding: 30px; border-radius: 10px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto; position: relative; color: #f8f8f2; border: 2px solid #44475a;">
+            
+            <button onclick="document.getElementById('help-modal').classList.add('hidden')" style="position: absolute; top: 15px; right: 15px; background: #ff5555; color: white; border: none; padding: 5px 12px; cursor: pointer; border-radius: 5px; font-weight: bold; font-size: 16px;">X</button>
+            
+            <h2 style="margin-top: 0; color: #50fa7b; border-bottom: 1px solid #44475a; padding-bottom: 10px;">Python Lightbot Dictionary</h2>
+
+            <h3 style="color: #8be9fd; margin-bottom: 5px;">🤖 Robot Commands</h3>
+            <p style="font-size: 14px; color: #bfbfbf; margin-top: 0;">These are the specific functions you can use to control Wall-E.</p>
+            <ul style="line-height: 1.8; background: #1e1f29; padding: 15px 20px 15px 40px; border-radius: 5px; font-family: monospace; font-size: 15px;">
+                <li><span style="color: #ffb86c">walk_forward()</span> - Moves forward 1 space.</li>
+                <li><span style="color: #ffb86c">turn_left()</span>    - Turns 90 degrees to the left.</li>
+                <li><span style="color: #ffb86c">turn_right()</span>   - Turns 90 degrees to the right.</li>
+                <li><span style="color: #ffb86c">jump()</span>         - Jumps up or down a ledge while moving forward.</li>
+                <li><span style="color: #ffb86c">light()</span>        - Lights up a blue tile (or turns it off). Light them all to win!</li>
+            </ul>
+
+            <h3 style="color: #bd93f9; margin-bottom: 5px; margin-top: 25px;">🔁 For Loops</h3>
+            <p style="font-size: 14px; margin-top: 0; color: #bfbfbf;">Use a <code>for</code> loop when you know exactly how many times to repeat an action. The <code>i</code> acts as the iterator (a built-in counter).</p>
+            <pre style="background: #1e1f29; padding: 15px; border-radius: 5px; color: #f8f8f2; border-left: 4px solid #bd93f9; margin-top: 10px;"><code><span style="color: #ff79c6">for</span> i <span style="color: #ff79c6">in</span> <span style="color: #8be9fd">range</span>(4):
+        walk_forward()
+        light()</code></pre>
+
+            <h3 style="color: #ff79c6; margin-bottom: 5px; margin-top: 25px;">🔄 While Loops</h3>
+            <p style="font-size: 14px; margin-top: 0; color: #bfbfbf;">Use a <code>while</code> loop to keep repeating as long as a condition is true. You must manually increase your iterator (<code>i</code>) so the loop eventually finishes, otherwise your game will freeze in an infinite loop!</p>
+            <pre style="background: #1e1f29; padding: 15px; border-radius: 5px; color: #f8f8f2; border-left: 4px solid #ff79c6; margin-top: 10px;"><code>i = 0
+    <span style="color: #ff79c6">while</span> i < 3:
+        jump()
+        i += 1</code></pre>
+
+        </div>
+    </div>
 
 <script>
 // --- Game Data & Levels ---
@@ -109,6 +144,7 @@ const rawLevels = [
 `Gold: 3
 Silver: 4
 Bronze: 5
+Dir: 1
 
 Height map:
 211111112
@@ -132,6 +168,7 @@ Item map:
 `Gold: 5
 Silver: 7
 Bronze: 11
+Dir: 1
 
 Height map:
 211111112
@@ -155,6 +192,7 @@ Item map:
 `Gold: 6
 Silver: 8
 Bronze: 11
+Dir: 1
 
 Height map:
 411111114
@@ -178,6 +216,7 @@ Item map:
 `Gold: 4
 Silver: 5
 Bronze: 6
+Dir: 1
 
 Height map:
 111111111
@@ -201,6 +240,7 @@ Item map:
 `Gold: 7
 Silver: 8
 Bronze: 11
+Dir: 2
 
 Height map:
 1111111
@@ -222,6 +262,7 @@ Item map:
 `Gold: 7
 Silver: 10
 Bronze: 13
+Dir: 1
 
 Height map:
 11111111
@@ -245,6 +286,7 @@ Item map:
 `Gold: 10
 Silver: 17
 Bronze: 22
+Dir: 2
 
 Height map:
 111111111
@@ -268,6 +310,7 @@ Item map:
 `Gold: 16
 Silver: 25
 Bronze: 26
+Dir: 2
 
 Height map:
 1113111
@@ -291,6 +334,7 @@ Item map:
 `Gold: 3
 Silver: 14
 Bronze: 15
+Dir: 1
 
 Height map:
 332111233
@@ -314,6 +358,7 @@ Item map:
 `Gold: 3
 Silver: 7
 Bronze: 13
+Dir: 1
 
 Height map:
 332111233
@@ -337,6 +382,7 @@ Item map:
 `Gold: 7
 Silver: 9
 Bronze: 11
+Dir: 1
 
 Height map:
 21111112
@@ -360,6 +406,7 @@ Item map:
 `Gold: 13
 Silver: 33
 Bronze: 104
+Dir: 1
 
 Height map:
 11212123
@@ -383,6 +430,7 @@ Item map:
 `Gold: 11
 Silver: 29
 Bronze: 29
+Dir: 1
 
 Height map:
 11111111
@@ -406,6 +454,7 @@ Item map:
 `Gold: 7
 Silver: 24
 Bronze: 28
+Dir: 0
 
 Height map:
 1111111
@@ -427,6 +476,7 @@ Item map:
 `Gold: 13
 Silver: 16
 Bronze: 26
+Dir: 0
 
 Height map:
 111111111
@@ -452,6 +502,7 @@ Item map:
 `Gold: 10
 Silver: 32
 Bronze: 43
+Dir: 0
 
 Height map:
 1111111
@@ -537,7 +588,7 @@ function init() {
 // --- Level Parsing ---
 function parseLevelString(str) {
     const lines = str.split('\n').map(l => l.trim());
-    let data = { gold: 0, silver: 0, bronze: 0, height: [], items: [], startX: 0, startZ: 0, startH: 0 };
+    let data = { gold: 0, silver: 0, bronze: 0, startDir: 1, height: [], items: [], startX: 0, startZ: 0, startH: 0 };
     
     let mode = 'meta';
     for (let line of lines) {
@@ -549,6 +600,10 @@ function parseLevelString(str) {
             if (line.startsWith('Gold:')) data.gold = parseInt(line.split(':')[1]);
             if (line.startsWith('Silver:')) data.silver = parseInt(line.split(':')[1]);
             if (line.startsWith('Bronze:')) data.bronze = parseInt(line.split(':')[1]);
+            
+            // Extract the new starting direction
+            if (line.startsWith('Dir:')) data.startDir = parseInt(line.split(':')[1]);
+            
         } else if (mode === 'height') {
             data.height.push(line.split('').map(Number));
         } else if (mode === 'items') {
@@ -561,7 +616,12 @@ function parseLevelString(str) {
             }
         }
     }
-    data.startH = data.height[data.startZ][data.startX];
+    
+    // Safely assign the starting height based on the spawn coordinates
+    if (data.height[data.startZ] !== undefined && data.height[data.startZ][data.startX] !== undefined) {
+        data.startH = data.height[data.startZ][data.startX];
+    }
+    
     return data;
 }
 
@@ -570,12 +630,12 @@ function buildMenu() {
     const container = document.getElementById('level-container');
     container.innerHTML = '';
     rawLevels.forEach((level, index) => {
-        const parsed = parseLevelString(level);
+        // We no longer parse the string here to save performance, just grab the saved data
         const saved = savedData.levels[index] || {};
         const div = document.createElement('div');
         div.className = 'level-card';
         div.innerHTML = `
-            <h3>Level ${index + 1}</h3>
+            <h3>Level ${index}</h3> 
             <p>${saved.medal || '❌'}</p>
             <p style="font-size:12px">Lines: ${saved.lines || '-'}</p>
         `;
@@ -623,7 +683,8 @@ function loadLevel(index) {
     
     levelData = parseLevelString(rawLevels[index]);
     
-    document.getElementById("level-title").innerText = `Level ${index + 1}`;
+    // Set the title to the exact zero-indexed array value
+    document.getElementById("level-title").innerText = `Level ${index}`;
     document.getElementById("gold-req").innerText = levelData.gold;
     document.getElementById("silver-req").innerText = levelData.silver;
     document.getElementById("bronze-req").innerText = levelData.bronze;
@@ -848,7 +909,10 @@ function resetLevel() {
     playerState.x = levelData.startX;
     playerState.z = levelData.startZ;
     playerState.h = levelData.startH;
-    playerState.dir = 1; 
+    
+    // CRITICAL FIX: Use the parsed starting direction instead of hardcoding 1!
+    playerState.dir = levelData.startDir; 
+    
     playerState.animating = false;
     playerState.currentAction = null;
     
