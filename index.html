@@ -49,6 +49,24 @@
         .level-card { background: #444; padding: 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
         .level-card:hover { background: #555; transform: scale(1.05); }
         .hidden { display: none !important; }
+
+        /* Example mode */
+        #example-code-display {
+            flex: 1; overflow: auto; padding: 16px; background: #282a36;
+            font-family: 'Courier New', monospace; font-size: 15px; line-height: 1.7;
+            color: #f8f8f2; white-space: pre;
+            user-select: none; -webkit-user-select: none; -moz-user-select: none;
+            pointer-events: none;
+        }
+        #example-code-display .kw  { color: #ff79c6; }
+        #example-code-display .fn  { color: #50fa7b; }
+        #example-code-display .num { color: #bd93f9; }
+        #example-code-display .cmt { color: #6272a4; font-style: italic; }
+        #example-mode-badge {
+            display: none; background: #6272a4; color: #f8f8f2;
+            font-size: 11px; font-weight: bold; letter-spacing: 0.05em;
+            padding: 3px 10px; border-radius: 3px; text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
@@ -76,8 +94,12 @@
 
     <div id="main-area">
         <div id="left-pane">
-            <div class="editor-header">Python Code | Medals - 🥇: <span id="gold-req"></span> 🥈: <span id="silver-req"></span> 🥉: <span id="bronze-req"></span></div>
+            <div class="editor-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Python Code | Medals - 🥇: <span id="gold-req"></span> 🥈: <span id="silver-req"></span> 🥉: <span id="bronze-req"></span></span>
+                <span id="example-mode-badge">Example</span>
+            </div>
             <div id="editor-container"></div>
+            <div id="example-code-display"></div>
         </div>
         <div id="right-pane">
             <div id="canvas-container"></div>
@@ -538,6 +560,7 @@ let isLevelActive = false;
 
 // --- Embed API State ---
 let isCustomLevel = false;       // True when a level was injected via postMessage
+let isExampleMode = false;       // True when running in read-only demo loop mode
 let customLevelString = null;    // Stored so Restart can reload the same string
 
 // Three.js Variables
@@ -575,6 +598,9 @@ function initEmbedListener() {
                 break;
             case 'LOAD_CUSTOM_LEVEL':
                 loadCustomLevel(data.levelString);
+                break;
+            case 'LOAD_EXAMPLE':
+                loadExampleMode(data.levelString, data.code);
                 break;
             case 'RESET':
                 resetLevel();
@@ -815,6 +841,89 @@ function loadCustomLevel(levelString) {
     resetLevel();
 
     postToParent({ type: 'LEVEL_LOADED', level: 'custom' });
+}
+
+// --- Example mode: read-only demo that loops automatically ---
+function loadExampleMode(levelString, code) {
+    isExampleMode = true;
+    isCustomLevel = true;
+    currentLevelIndex = 'custom';
+    isLevelActive = true;
+
+    document.getElementById('menu-modal').classList.add('hidden');
+
+    // Hide the editable editor, show the read-only display panel
+    document.getElementById('editor-container').style.display = 'none';
+    document.getElementById('example-code-display').style.display = 'block';
+    document.getElementById('example-mode-badge').style.display = 'inline-block';
+
+    // Hide play/stop controls — example runs itself
+    document.getElementById('btn-play').style.display = 'none';
+    document.getElementById('btn-stop').style.display = 'none';
+
+    // Render code with simple syntax highlighting (no copy-paste possible)
+    document.getElementById('example-code-display').innerHTML = highlightPython(code);
+
+    // Store code for the auto-loop
+    window._exampleCode = code;
+
+    levelData = parseLevelString(levelString);
+    document.getElementById("level-title").innerText = 'Example';
+    document.getElementById("gold-req").innerText  = levelData.gold;
+    document.getElementById("silver-req").innerText = levelData.silver;
+    document.getElementById("bronze-req").innerText = levelData.bronze;
+    document.getElementById("btn-next-level").style.display = 'none';
+    document.getElementById("btn-close-win").style.display  = 'none';
+
+    build3DLevel();
+    resetLevel();
+
+    // Auto-play after a short pause so the level has time to render
+    setTimeout(() => examplePlay(), 800);
+
+    postToParent({ type: 'LEVEL_LOADED', level: 'example' });
+}
+
+function examplePlay() {
+    if (!isExampleMode) return;
+    resetLevel();
+
+    const prog = window._exampleCode || '';
+    Sk.configure({ output: outf, read: builtinRead });
+    Sk.builtins.walk_forward = new Sk.builtin.func(() => { commandQueue.push('walk_forward'); });
+    Sk.builtins.turn_right   = new Sk.builtin.func(() => { commandQueue.push('turn_right'); });
+    Sk.builtins.turn_left    = new Sk.builtin.func(() => { commandQueue.push('turn_left'); });
+    Sk.builtins.jump         = new Sk.builtin.func(() => { commandQueue.push('jump'); });
+    Sk.builtins.light        = new Sk.builtin.func(() => { commandQueue.push('light'); });
+
+    Sk.misceval.asyncToPromise(() => Sk.importMainWithBody('<stdin>', false, prog, true))
+        .then(() => { isPlaying = true; })
+        .catch(() => {});
+}
+
+function highlightPython(code) {
+    // Escape HTML first
+    let escaped = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    // Apply syntax highlighting spans (order matters — most specific first)
+    escaped = escaped
+        // Comments
+        .replace(/(#[^\n]*)/g, '<span class="cmt">$1</span>')
+        // Keywords (only outside comments — simplified, good enough for lesson code)
+        .replace(/\b(for|in|range|while|if|elif|else|def|return|and|or|not|True|False)\b/g,
+                 '<span class="kw">$1</span>')
+        // Built-in functions
+        .replace(/\b(walk_forward|turn_right|turn_left|jump|light|print|len|int|str|float)\b/g,
+                 '<span class="fn">$1</span>')
+        // Numbers
+        .replace(/\b(\d+)\b/g, '<span class="num">$1</span>')
+        // Newlines to <br> while preserving indentation
+        .replace(/\n/g, '\n');
+
+    return escaped;
 }
 
 function updateLineCount() {
@@ -1122,7 +1231,15 @@ function animate() {
             isPlaying = false;
             clearInterval(timerInterval);
             if (lightsRemaining === 0 && levelData.items.flat().includes('L')) {
-                handleWin();
+                if (isExampleMode) {
+                    // In example mode: pause briefly then loop again
+                    setTimeout(() => examplePlay(), 1200);
+                } else {
+                    handleWin();
+                }
+            } else if (isExampleMode) {
+                // Ran out of commands but didn't win — still loop
+                setTimeout(() => examplePlay(), 1200);
             }
         }
 
