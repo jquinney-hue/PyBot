@@ -14,7 +14,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulkt-stdlib.js"></script>
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -101,10 +101,12 @@
             <p>Lines used: <span id="win-lines"></span></p>
             <p>Time: <span id="win-time"></span>s</p>
             <br>
+            <button id="btn-restart-level">↺ Restart</button>
             <button id="btn-next-level">Next Level</button>
             <button id="btn-close-win">Close</button>
         </div>
     </div>
+
     <div id="help-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; justify-content: center; align-items: center; font-family: sans-serif;">
         <div style="background: #282a36; padding: 30px; border-radius: 10px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto; position: relative; color: #f8f8f2; border: 2px solid #44475a;">
             
@@ -125,15 +127,15 @@
             <h3 style="color: #bd93f9; margin-bottom: 5px; margin-top: 25px;">🔁 For Loops</h3>
             <p style="font-size: 14px; margin-top: 0; color: #bfbfbf;">Use a <code>for</code> loop when you know exactly how many times to repeat an action. The <code>i</code> acts as the iterator (a built-in counter).</p>
             <pre style="background: #1e1f29; padding: 15px; border-radius: 5px; color: #f8f8f2; border-left: 4px solid #bd93f9; margin-top: 10px;"><code><span style="color: #ff79c6">for</span> i <span style="color: #ff79c6">in</span> <span style="color: #8be9fd">range</span>(4):
-        walk_forward()
-        light()</code></pre>
+    walk_forward()
+    light()</code></pre>
 
             <h3 style="color: #ff79c6; margin-bottom: 5px; margin-top: 25px;">🔄 While Loops</h3>
             <p style="font-size: 14px; margin-top: 0; color: #bfbfbf;">Use a <code>while</code> loop to keep repeating as long as a condition is true. You must manually increase your iterator (<code>i</code>) so the loop eventually finishes, otherwise your game will freeze in an infinite loop!</p>
             <pre style="background: #1e1f29; padding: 15px; border-radius: 5px; color: #f8f8f2; border-left: 4px solid #ff79c6; margin-top: 10px;"><code>i = 0
-    <span style="color: #ff79c6">while</span> i < 3:
-        jump()
-        i += 1</code></pre>
+<span style="color: #ff79c6">while</span> i < 3:
+    jump()
+    i += 1</code></pre>
 
         </div>
     </div>
@@ -534,23 +536,65 @@ let timerInterval;
 let timeElapsed = 0;
 let isLevelActive = false;
 
+// --- Embed API State ---
+let isCustomLevel = false;       // True when a level was injected via postMessage
+let customLevelString = null;    // Stored so Restart can reload the same string
+
 // Three.js Variables
 let scene, camera, renderer, controls;
 let gridGroup, playerMesh;
-let gridTiles = []; // To store tile objects for lighting
+let gridTiles = [];
 let lightsRemaining = 0;
 let clock = new THREE.Clock();
 
 // Player State
 let playerState = {
     x: 0, z: 0, h: 0,
-    dir: 2, // 0: +x(Right), 1: +z(Down), 2: -x(Left), 3: -z(Up)
+    dir: 2,
     animating: false,
     animProgress: 0,
     currentAction: null,
     startX: 0, startZ: 0, startH: 0, startDir: 0,
     targetX: 0, targetZ: 0, targetH: 0, targetDir: 0
 };
+
+// --- Embed API: postMessage bridge ---
+
+function postToParent(payload) {
+    if (window.parent !== window) {
+        window.parent.postMessage(payload, '*');
+    }
+}
+
+function initEmbedListener() {
+    window.addEventListener('message', (e) => {
+        const { type, data } = e.data || {};
+        switch (type) {
+            case 'LOAD_LEVEL':
+                loadLevel(parseInt(data.id, 10));
+                break;
+            case 'LOAD_CUSTOM_LEVEL':
+                loadCustomLevel(data.levelString);
+                break;
+            case 'RESET':
+                resetLevel();
+                break;
+            case 'SET_CODE':
+                editor.setValue(data.code || '');
+                break;
+            case 'GET_STATE':
+                postToParent({
+                    type: 'STATE_RESPONSE',
+                    level: currentLevelIndex,
+                    isCustomLevel,
+                    isPlaying,
+                    lightsRemaining,
+                    timeElapsed
+                });
+                break;
+        }
+    });
+}
 
 // --- Initialization ---
 function init() {
@@ -564,23 +608,17 @@ function init() {
             "Tab": "indentMore", 
             "Shift-Tab": "indentLess",
             "Backspace": function(cm) {
-                // If there's a selection, just delete the selected text normally
                 if (cm.somethingSelected()) {
                     cm.execCommand("delCharBefore");
                     return;
                 }
-                
                 const pos = cm.getCursor();
                 const line = cm.getLine(pos.line);
                 const indentUnit = cm.getOption("indentUnit");
-                
-                // If there are only spaces before the cursor, delete up to the nearest tab stop
                 if (pos.ch > 0 && line.slice(0, pos.ch).trim() === "") {
-                    // Calculate how many spaces to delete (handles partial indents cleanly)
                     const spacesToDelete = pos.ch % indentUnit || indentUnit;
                     cm.replaceRange("", {line: pos.line, ch: pos.ch - spacesToDelete}, pos);
                 } else {
-                    // Otherwise, just delete a single character like normal
                     cm.execCommand("delCharBefore");
                 }
             }
@@ -593,7 +631,13 @@ function init() {
     document.getElementById("btn-play").addEventListener("click", playCode);
     document.getElementById("btn-stop").addEventListener("click", resetLevel);
     document.getElementById("btn-home").addEventListener("click", showMenu);
-    document.getElementById("btn-close-win").addEventListener("click", () => document.getElementById("win-modal").classList.add("hidden"));
+    document.getElementById("btn-restart-level").addEventListener("click", () => {
+        document.getElementById("win-modal").classList.add("hidden");
+        resetLevel();
+    });
+    document.getElementById("btn-close-win").addEventListener("click", () => {
+        document.getElementById("win-modal").classList.add("hidden");
+    });
     document.getElementById("btn-next-level").addEventListener("click", () => {
         document.getElementById("win-modal").classList.add("hidden");
         loadLevel(currentLevelIndex + 1);
@@ -606,7 +650,22 @@ function init() {
     new ResizeObserver(resizeCanvas).observe(document.getElementById('right-pane'));
 
     initThreeJS();
-    buildMenu();
+    initEmbedListener();
+
+    // --- URL param handling ---
+    const params = new URLSearchParams(window.location.search);
+    const embedLevel = params.get('level');
+    const hideMenu   = params.get('hideMenu') === 'true';
+    const hideNav    = params.get('hideNav')  === 'true';
+
+    if (hideNav)  document.getElementById('top-bar').style.display = 'none';
+    if (hideMenu) document.getElementById('btn-home').style.display = 'none';
+
+    if (embedLevel !== null) {
+        loadLevel(parseInt(embedLevel, 10));
+    } else {
+        buildMenu();
+    }
 }
 
 // --- Level Parsing ---
@@ -624,10 +683,7 @@ function parseLevelString(str) {
             if (line.startsWith('Gold:')) data.gold = parseInt(line.split(':')[1]);
             if (line.startsWith('Silver:')) data.silver = parseInt(line.split(':')[1]);
             if (line.startsWith('Bronze:')) data.bronze = parseInt(line.split(':')[1]);
-            
-            // Extract the new starting direction
             if (line.startsWith('Dir:')) data.startDir = parseInt(line.split(':')[1]);
-            
         } else if (mode === 'height') {
             data.height.push(line.split('').map(Number));
         } else if (mode === 'items') {
@@ -641,7 +697,6 @@ function parseLevelString(str) {
         }
     }
     
-    // Safely assign the starting height based on the spawn coordinates
     if (data.height[data.startZ] !== undefined && data.height[data.startZ][data.startX] !== undefined) {
         data.startH = data.height[data.startZ][data.startX];
     }
@@ -654,7 +709,6 @@ function buildMenu() {
     const container = document.getElementById('level-container');
     container.innerHTML = '';
     rawLevels.forEach((level, index) => {
-        // We no longer parse the string here to save performance, just grab the saved data
         const saved = savedData.levels[index] || {};
         const div = document.createElement('div');
         div.className = 'level-card';
@@ -671,7 +725,7 @@ function buildMenu() {
 function showMenu() {
     resetLevel();
     saveCurrentCode();
-    isLevelActive = false; // We are returning to the menu
+    isLevelActive = false;
     document.getElementById('menu-modal').classList.remove('hidden');
     buildMenu();
 }
@@ -685,8 +739,7 @@ function clearSaveData() {
 }
 
 function saveCurrentCode() {
-    if (!isLevelActive) return; // Prevent overwriting saves when in the menu
-    
+    if (!isLevelActive || isCustomLevel) return;
     if (!savedData.levels[currentLevelIndex]) savedData.levels[currentLevelIndex] = {};
     savedData.levels[currentLevelIndex].code = editor.getValue();
     localStorage.setItem('lightbotSave', JSON.stringify(savedData));
@@ -700,31 +753,65 @@ function loadLevel(index) {
         return;
     }
     
-    saveCurrentCode(); // Safely saves previous level if one was active
+    saveCurrentCode();
     
+    // Clear any custom level state
+    isCustomLevel = false;
+    customLevelString = null;
+
     currentLevelIndex = index;
-    isLevelActive = true; // Mark as active so future saves work
+    isLevelActive = true;
     
     levelData = parseLevelString(rawLevels[index]);
     
-    // Set the title to the exact zero-indexed array value
     document.getElementById("level-title").innerText = `Level ${index}`;
     document.getElementById("gold-req").innerText = levelData.gold;
     document.getElementById("silver-req").innerText = levelData.silver;
     document.getElementById("bronze-req").innerText = levelData.bronze;
 
-    // Load saved code
+    // Show native-level win buttons, hide restart-only mode
+    document.getElementById("btn-next-level").style.display = '';
+    document.getElementById("btn-close-win").style.display  = '';
+
     const saved = savedData.levels[index] || {};
     editor.setValue(saved.code || "");
     updateLineCount();
 
     build3DLevel();
     resetLevel();
+
+    postToParent({ type: 'LEVEL_LOADED', level: index });
+}
+
+function loadCustomLevel(levelString) {
+    saveCurrentCode();
+
+    isCustomLevel = true;
+    customLevelString = levelString;
+    currentLevelIndex = 'custom';
+    isLevelActive = true;
+
+    levelData = parseLevelString(levelString);
+
+    document.getElementById("level-title").innerText = 'Custom Level';
+    document.getElementById("gold-req").innerText  = levelData.gold;
+    document.getElementById("silver-req").innerText = levelData.silver;
+    document.getElementById("bronze-req").innerText = levelData.bronze;
+
+    // Custom levels: only show Restart, hide Next Level and Close
+    document.getElementById("btn-next-level").style.display = 'none';
+    document.getElementById("btn-close-win").style.display  = 'none';
+
+    editor.setValue('');
+    updateLineCount();
+    build3DLevel();
+    resetLevel();
+
+    postToParent({ type: 'LEVEL_LOADED', level: 'custom' });
 }
 
 function updateLineCount() {
     const code = editor.getValue();
-    // Count non-empty lines, ignoring comments (simplistic count for medals)
     const lines = code.split('\n').filter(l => l.trim() !== '' && !l.trim().startsWith('#')).length;
     document.getElementById("line-count").innerText = lines;
     return lines;
@@ -759,11 +846,10 @@ function initThreeJS() {
     // --- Wall-E Robot Mesh Construction ---
     playerMesh = new THREE.Group();
     
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xdca822 }); // Orange/Yellow
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xdca822 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Glowing yellow
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
 
-    // Tracks: We draw stripes on a canvas to make a tread texture
     const canvas = document.createElement('canvas');
     canvas.width = 64; canvas.height = 128;
     const ctx = canvas.getContext('2d');
@@ -783,13 +869,11 @@ function initThreeJS() {
     trackR.position.set(0.25, 0.1, 0);
     playerMesh.add(trackL, trackR);
 
-    // Body
     const bodyGeo = new THREE.BoxGeometry(0.4, 0.35, 0.4);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.set(0, 0.35, 0);
     playerMesh.add(body);
 
-    // Head & Eyes
     const headGroup = new THREE.Group();
     headGroup.position.set(0, 0.6, 0);
     const headGeo = new THREE.BoxGeometry(0.3, 0.15, 0.2);
@@ -804,17 +888,16 @@ function initThreeJS() {
     headGroup.add(head, eyeL, eyeR);
     playerMesh.add(headGroup);
 
-    // Arms Rig Generation
     const createArm = (isLeft) => {
         const armGroup = new THREE.Group();
-        armGroup.position.set(isLeft ? -0.22 : 0.22, 0.45, 0); // Shoulder Pivot
+        armGroup.position.set(isLeft ? -0.22 : 0.22, 0.45, 0);
         
         const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.25, 0.06), bodyMat);
         upperArm.position.set(0, -0.125, 0);
         armGroup.add(upperArm);
         
         const elbowGroup = new THREE.Group();
-        elbowGroup.position.set(0, -0.25, 0); // Elbow Pivot relative to shoulder
+        elbowGroup.position.set(0, -0.25, 0);
         
         const lowerArm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), darkMat);
         lowerArm.position.set(0, -0.1, 0);
@@ -833,7 +916,6 @@ function initThreeJS() {
     const rightArm = createArm(false);
     playerMesh.add(leftArm.arm, rightArm.arm);
 
-    // Save rigging references so the animation loop can grab them
     playerMesh.userData = {
         trackMat: trackMat,
         shoulders: [leftArm.arm, rightArm.arm],
@@ -853,13 +935,11 @@ function build3DLevel() {
 
     const heightScale = 0.5;
     const boxGeo = new THREE.BoxGeometry(1, heightScale, 1);
-    const edgesGeo = new THREE.EdgesGeometry(boxGeo); // Creates the outline geometry
+    const edgesGeo = new THREE.EdgesGeometry(boxGeo);
 
-    // Base materials
     const normalMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
     const lightOffMat = new THREE.MeshStandardMaterial({ color: 0x0055ff }); 
     
-    // Edge materials
     const edgeGrey = new THREE.LineBasicMaterial({ color: 0x555555 });
     const edgeDarkBlue = new THREE.LineBasicMaterial({ color: 0x0000aa });
     
@@ -895,7 +975,6 @@ function build3DLevel() {
                 mesh.receiveShadow = true;
                 mesh.castShadow = true;
 
-                // Add the outline to the mesh
                 let edges = new THREE.LineSegments(edgesGeo, edgeMat);
                 mesh.add(edges);
 
@@ -929,20 +1008,15 @@ function resetLevel() {
     timeElapsed = 0;
     document.getElementById("time-elapsed").innerText = "0.0";
     
-    // Reset Player
     playerState.x = levelData.startX;
     playerState.z = levelData.startZ;
     playerState.h = levelData.startH;
-    
-    // CRITICAL FIX: Use the parsed starting direction instead of hardcoding 1!
     playerState.dir = levelData.startDir; 
-    
     playerState.animating = false;
     playerState.currentAction = null;
     
     updatePlayerTransform(true);
 
-    // Reset Lights
     lightsRemaining = 0;
     const lightOffMat = new THREE.MeshStandardMaterial({ color: 0x0055ff });
     for (let z = 0; z < levelData.height.length; z++) {
@@ -953,11 +1027,9 @@ function resetLevel() {
                 let topMesh = tile.meshes[tile.meshes.length - 1];
                 topMesh.material = lightOffMat;
                 
-                // Reset edge outline
                 let edges = topMesh.children.find(c => c.type === 'LineSegments');
                 if (edges) edges.material = new THREE.LineBasicMaterial({ color: 0x0000aa });
 
-                // Remove point light
                 let pLight = topMesh.children.find(c => c.type === 'PointLight');
                 if(pLight) topMesh.remove(pLight);
                 
@@ -976,9 +1048,8 @@ function updatePlayerTransform(instant = false) {
 
     let targetWorldX = playerState.x + offsetX;
     let targetWorldZ = playerState.z + offsetZ;
-    let targetWorldY = playerState.h * heightScale; // Scaled height
+    let targetWorldY = playerState.h * heightScale;
     
-    // Rotation logic
     let targetRotY = 0;
     if (playerState.dir === 0) targetRotY = Math.PI / 2;
     else if (playerState.dir === 1) targetRotY = 0;
@@ -1007,7 +1078,6 @@ function playCode() {
     const prog = editor.getValue();
     Sk.configure({ output: outf, read: builtinRead });
     
-    // Inject custom functions
     Sk.builtins.walk_forward = new Sk.builtin.func(() => { commandQueue.push('walk_forward'); });
     Sk.builtins.turn_right = new Sk.builtin.func(() => { commandQueue.push('turn_right'); });
     Sk.builtins.turn_left = new Sk.builtin.func(() => { commandQueue.push('turn_left'); });
@@ -1017,7 +1087,6 @@ function playCode() {
     try {
         Sk.misceval.asyncToPromise(() => Sk.importMainWithBody("<stdin>", false, prog, true))
         .then(() => {
-            // Code execution finished instantly, commands are queued.
             isPlaying = true;
             timerInterval = setInterval(() => {
                 timeElapsed += 0.1;
@@ -1043,18 +1112,15 @@ function animate() {
         if (!playerState.animating && commandQueue.length > 0) {
             startAction(commandQueue.shift());
         } else if (!playerState.animating && commandQueue.length === 0) {
-            // Finished queue, check win
             isPlaying = false;
             clearInterval(timerInterval);
             if (lightsRemaining === 0 && levelData.items.flat().includes('L')) {
                 handleWin();
-            } else {
-                // Failed (ran out of commands)
             }
         }
 
         if (playerState.animating) {
-            playerState.animProgress += dt * speedMultiplier; // 1 second base duration
+            playerState.animProgress += dt * speedMultiplier;
             if (playerState.animProgress >= 1.0) {
                 playerState.animProgress = 1.0;
                 playerState.animating = false;
@@ -1088,39 +1154,32 @@ function startAction(action) {
     playerState.animating = true;
     playerState.animProgress = 0;
 
-    // 1. Sync start positions to current locations
     playerState.startX = playerState.x;
     playerState.startZ = playerState.z;
     playerState.startH = playerState.h;
     playerState.startDir = playerState.dir;
 
-    // 2. Default targets to start positions (stay still unless told otherwise)
     playerState.targetX = playerState.x;
     playerState.targetZ = playerState.z;
     playerState.targetH = playerState.h;
     playerState.targetDir = playerState.dir;
 
-    // 3. Grid boundaries
     const rows = levelData.height.length;
     const cols = levelData.height[0].length;
 
-    // 4. Determine which way the robot is currently facing
     let dx = 0, dz = 0;
-    if (playerState.dir === 0) dx = 1;       // Right (+x)
-    else if (playerState.dir === 1) dz = 1;  // Down (+z, towards camera)
-    else if (playerState.dir === 2) dx = -1; // Left (-x)
-    else if (playerState.dir === 3) dz = -1; // Up (-z, away from camera)
+    if (playerState.dir === 0) dx = 1;
+    else if (playerState.dir === 1) dz = 1;
+    else if (playerState.dir === 2) dx = -1;
+    else if (playerState.dir === 3) dz = -1;
 
-    // Calculate the coordinates of the block directly in front of him
     let nextX = playerState.x + dx;
     let nextZ = playerState.z + dz;
     
-    // Check if the block in front is actually inside the map boundaries
     let isValidMove = (nextX >= 0 && nextX < cols && nextZ >= 0 && nextZ < rows);
 
     switch (action) {
         case 'walk_forward':
-            // He can only walk forward if the next block is exactly the SAME height
             if (isValidMove && levelData.height[nextZ][nextX] === playerState.h) {
                 playerState.targetX = nextX;
                 playerState.targetZ = nextZ;
@@ -1128,7 +1187,6 @@ function startAction(action) {
             break;
             
         case 'jump':
-            // He can jump UP by exactly 1 unit, or DOWN by any amount
             if (isValidMove) {
                 let nextH = levelData.height[nextZ][nextX];
                 if (nextH === playerState.h + 1 || nextH < playerState.h) {
@@ -1148,7 +1206,6 @@ function startAction(action) {
             break;
             
         case 'light':
-            // Lighting has no movement target; the color change triggers when the animation ends
             break;
     }
 }
@@ -1163,19 +1220,16 @@ function applyAnimationState() {
     const offsetX = -cols / 2 + 0.5;
     const offsetZ = -rows / 2 + 0.5;
 
-    // Base Position lerp
     let curX = playerState.startX + (playerState.targetX - playerState.startX) * ease;
     let curZ = playerState.startZ + (playerState.targetZ - playerState.startZ) * ease;
     let logicalH = playerState.startH + (playerState.targetH - playerState.startH) * ease;
     let curH = logicalH * heightScale; 
     
-    // Jump arc
     if (playerState.currentAction === 'jump' && (playerState.targetX !== playerState.startX || playerState.targetZ !== playerState.startZ)) {
         curH += Math.sin(p * Math.PI) * (1.0 * heightScale);
     }
     playerMesh.position.set(curX + offsetX, curH, curZ + offsetZ);
 
-    // Rotation lerp
     let startRot = getRotationForDir(playerState.startDir);
     let targetRot = getRotationForDir(playerState.targetDir);
     
@@ -1185,47 +1239,37 @@ function applyAnimationState() {
     }
     playerMesh.rotation.y = startRot + (targetRot - startRot) * ease;
 
-    // --- Wall-E Specific Animations ---
     const rig = playerMesh.userData;
     
-    // Default resting pose (-45 degrees)
     let shoulderX = -Math.PI / 4;
     let elbowX = -Math.PI / 4;
 
     const action = playerState.currentAction;
     
-    // Scroll the tread texture if moving
     if (action === 'walk_forward' || action === 'jump' || action === 'turn_right' || action === 'turn_left') {
         const speedMultiplier = parseFloat(document.getElementById("speed-slider").value);
         rig.trackMat.map.offset.y -= 0.05 * speedMultiplier; 
     }
 
-    // Arm Swings
     if (action === 'light') {
-        // Swing UP and back down (Math.sin goes 0 -> 1 -> 0)
         shoulderX -= Math.sin(p * Math.PI) * (Math.PI / 1.5);
-        elbowX += Math.sin(p * Math.PI) * (Math.PI / 4); // Extend elbows slightly as they reach up
+        elbowX += Math.sin(p * Math.PI) * (Math.PI / 4);
     } else if (action === 'jump') {
-        // Swing DOWN and back up
         shoulderX += Math.sin(p * Math.PI) * (Math.PI / 4);
     } else if (action === 'walk_forward') {
-        // Slight bouncy bob when walking
         shoulderX += Math.sin(p * Math.PI * 2) * 0.1;
     }
 
-    // Apply the math to the joints
     rig.shoulders.forEach(s => s.rotation.x = shoulderX);
     rig.elbows.forEach(e => e.rotation.x = elbowX);
 }
 
 function applyActionFinal() {
-    // 1. CRITICAL: Permanently commit the target coordinates to the actual position!
     playerState.x = playerState.targetX;
     playerState.z = playerState.targetZ;
     playerState.h = playerState.targetH;
     playerState.dir = playerState.targetDir;
     
-    // 2. Handle lighting up the blocks and changing outline colors
     if (playerState.currentAction === 'light') {
         let tile = gridTiles[playerState.z][playerState.x];
         if (tile.item === 'L') {
@@ -1254,13 +1298,11 @@ function applyActionFinal() {
         }
     }
 
-    // 3. Reset Wall-E's arms to his resting pose so the animation ends cleanly
     if (playerMesh && playerMesh.userData.shoulders) {
         playerMesh.userData.shoulders.forEach(s => s.rotation.x = -Math.PI / 4);
         playerMesh.userData.elbows.forEach(e => e.rotation.x = -Math.PI / 4);
     }
     
-    // 4. Snap the model to the finalized coordinates
     updatePlayerTransform(true);
 }
 
@@ -1268,7 +1310,7 @@ function getRotationForDir(dir) {
     if (dir === 0) return Math.PI / 2;
     if (dir === 1) return 0;
     if (dir === 2) return -Math.PI / 2;
-    return Math.PI; // dir 3
+    return Math.PI;
 }
 
 function handleWin() {
@@ -1283,11 +1325,21 @@ function handleWin() {
     document.getElementById("win-time").innerText = timeElapsed.toFixed(1);
     document.getElementById("win-modal").classList.remove("hidden");
 
-    // Save progress
-    if (!savedData.levels[currentLevelIndex]) savedData.levels[currentLevelIndex] = {};
-    savedData.levels[currentLevelIndex].lines = linesUsed;
-    savedData.levels[currentLevelIndex].medal = medal;
-    localStorage.setItem('lightbotSave', JSON.stringify(savedData));
+    // Save progress for native levels only
+    if (!isCustomLevel) {
+        if (!savedData.levels[currentLevelIndex]) savedData.levels[currentLevelIndex] = {};
+        savedData.levels[currentLevelIndex].lines = linesUsed;
+        savedData.levels[currentLevelIndex].medal = medal;
+        localStorage.setItem('lightbotSave', JSON.stringify(savedData));
+    }
+
+    postToParent({
+        type: 'LEVEL_COMPLETE',
+        level: currentLevelIndex,
+        medal,
+        lines: linesUsed,
+        time: timeElapsed
+    });
 }
 
 // Start
