@@ -663,6 +663,10 @@ function init() {
 
     if (embedLevel !== null) {
         loadLevel(parseInt(embedLevel, 10));
+    } else if (hideMenu) {
+        // Embedded with hideMenu=true but no level — wait silently for LOAD_CUSTOM_LEVEL
+        // Don't show the menu; the parent will inject a level via postMessage
+        document.getElementById('menu-modal').classList.add('hidden');
     } else {
         buildMenu();
     }
@@ -790,6 +794,9 @@ function loadCustomLevel(levelString) {
     customLevelString = levelString;
     currentLevelIndex = 'custom';
     isLevelActive = true;
+
+    // Always hide the menu when a custom level is injected
+    document.getElementById('menu-modal').classList.add('hidden');
 
     levelData = parseLevelString(levelString);
 
